@@ -1,6 +1,7 @@
 const dicUrl = 'https://api.dictionaryapi.dev/api/v2/entries/en/';
+const maxUncert = .3;
 
-let localDic = {};
+let localDic = { any: {} };
 
 async function getWordInfo(word) {
     try {
@@ -13,26 +14,33 @@ async function getWordInfo(word) {
 
 
 
-let patterns = {
+let patternLists = {
     greeting: [
-        { key: 'partOfSpeech', eq: ['exclamation', 'interjection'] },
-        { key: 'def', has: ['greeting'] }
-    ]
+        new Pattern(
+            [
+                { key: 'partOfSpeech', eq: ['exclamation', 'interjection'] },
+                { key: 'def', has: ['greeting'] }
+            ],
+            .1
+        ),
+        new Pattern(
+            [
+                { key: 'def', has: ['greeting'] }
+            ],
+            .6
+        )
+    ],
+    user: [new Pattern([{ key: 'word', eq: ['i', 'me', 'myself', 'my', 'mine'] }], 0)],
+    shitchat: [new Pattern([{ key: 'word', starts: ['you'], eq: ['thou', 'thee', 'thy', 'thyself', 'thine', 'ye'], has: ['shitchat', 'shit-chat'] }], .01)],
+    bad: [new Pattern([{ key: 'word', has: ['fuck'] }])]
 }
 
 function match(wordData) {
-    for (let key in patterns) {
-        const p = patterns[key]
-        //If some definition matches every condition of pattern p
-        if (p.every(c =>
-            wordData.meanings.some(m =>
-                c.eq?.includes(m[c.key]) ||
-                c.has?.some(e =>
-                    m[c.key].includes(e)
-                )
-            )
-        )) {
-            wordData.patterns.add(key);
+    for (let key in patternLists) {
+        const ps = patternLists[key]
+        let uncert = ps.reduce((u, p) => u * p.check(wordData), 1);
+        wordData.patterns[key] = uncert;
+        if (uncert <= maxUncert) {
             localDic[key] ||= {};
             localDic[key][wordData.word] = wordData;
         }
@@ -41,32 +49,29 @@ function match(wordData) {
 }
 
 
-class Word {
-    constructor(data) {
-        this.word = data.word;
-        this.meanings = data.meanings || [];
-        this.meanings.forEach(m => m.def = m.definitions[0].definition.toLowerCase());
-        this.pos = this.meanings.map(m => m.partOfSpeech);
-        this.patterns = new Set();
-    }
-}
+
 
 async function reply(msg) {
     let words = msg.toLowerCase().split(' ').map(async w => match(await (getWordInfo(w))));
+    let rep = "";
     for (i in words) {
         words[i] = match(await words[i]);
     }
-    if (words.some(w => w.patterns.has('greeting'))) {
-        return 'Hi there'
+
+    if (words.some(w => w.patterns.greeting <= maxUncert)) {
+        rep += 'Hi there! '
     }
-    return 'Sorry, I don\'t understand'
-}
-window.onload = function () {
-    const replyDiv = document.getElementById('reply');
-    const input = document.getElementById('input');
-    document.onkeyup = async function (ev) {
-        if (ev.key === 'Enter') {
-            replyDiv.innerHTML = await reply(input.value)
+    if (words.some(w => w.patterns.shitchat <= maxUncert)) {
+        rep += 'That\'s me! '
+        let start = 0;
+        let lastI = words.length - 1;
+        if (words[lastI].patterns.shitchat <= maxUncert) {
+            rep += msg.split(' ').slice(0, lastI).join(' ') + ' you too! '
         }
     }
+
+    if (words.some(w => w.patterns.bad <= maxUncert)) {
+        rep += 'Fuck you!'
+    }
+    return rep || 'Sorry, I don\'t understand';
 }
