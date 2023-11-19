@@ -33,7 +33,14 @@ let patternLists = {
     user: [new Pattern([{ key: 'word', eq: ['i', 'me', 'myself', 'my', 'mine'] }])],
     shitchat: [new Pattern([{ key: 'word', starts: ['you'], eq: ['thou', 'thee', 'thy', 'thyself', 'thine', 'ye'], has: ['shitchat', 'shit-chat'] }], .01)],
     bad: [new Pattern([{ key: 'word', has: ['fuck'] }])]
-}
+};
+
+['noun', 'verb', 'adjective', 'interjection', 'exclamation'].forEach(
+    (pos, i, poss) => patternLists[pos] = [
+        new Pattern([{ key: 'partOfSpeech', eq: [pos] }], 0.1),
+        new Pattern([{ key: 'partOfSpeech', eq: [poss.filter(p => p !== pos)] }], 4)
+    ]
+)
 
 function match(wordData) {
     for (let key in patternLists) {
@@ -54,7 +61,7 @@ function typeUncert(words, key) {
     return words.reduce((u, w) => u * w.patterns[key], 1);
 }
 
-function hasType() {
+function hasType(words, key) {
     return typeUncert(...arguments) <= maxUncert;
 }
 
@@ -65,7 +72,7 @@ async function reply(msg) {
         words[i] = await words[i];
     }
 
-    if (hasType(words, greeting)) {
+    if (hasType(words, 'greeting')) {
         rep += 'Hi there! '
     }
 
@@ -73,7 +80,7 @@ async function reply(msg) {
         rep += 'That\'s you!'
     }
 
-    if (words.some(w => w.patterns.shitchat <= maxUncert)) {
+    if (hasType(words, 'shitchat')) {
         rep += 'That\'s me! '
         let start = 0;
         let lastI = words.length - 1;
